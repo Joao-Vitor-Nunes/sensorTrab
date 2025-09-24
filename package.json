@@ -1,0 +1,13 @@
+{
+  "name": "sistemas-distribuidos",
+  "version": "1.0.0",
+  "scripts": {
+    "start:gateway": "ts-node gateway.ts", 
+    "start:calc": "ts-node calculator.ts",
+    "start:sensor": "ts-node sensor.ts"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.3"
+  }
+}
