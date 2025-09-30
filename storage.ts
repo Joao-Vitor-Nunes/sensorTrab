@@ -23,9 +23,26 @@ const server = net.createServer((socket) => {
       buffer = buffer.slice(idx + 1);
 
       if (!line) continue;
+
+      // --- Novo: comando GET_ALL ---
+      if (line === "GET_ALL") {
+        console.log("[STORAGE] Enviando todos os registros...");
+        if (fs.existsSync(DB_FILE)) {
+          const fileContent = fs.readFileSync(DB_FILE, "utf-8").trim();
+          
+          const lines = fileContent.split("\n").filter((l) => l.trim() !== "");
+          console.log(lines)
+          for (const l of lines) {
+            socket.write(l.trim() + "\n");
+          }
+        }
+        socket.end();
+        continue;
+      }
+
+      // --- Comportamento existente: salvar JSON ---
       try {
-        // Valida JSON; se ok, persiste
-        JSON.parse(line);
+        JSON.parse(line); // valida
         fs.appendFileSync(DB_FILE, line + "\n");
         console.log(`[STORAGE] Registro salvo (${line.length}b)`);
       } catch (e) {

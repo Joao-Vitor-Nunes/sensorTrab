@@ -1,60 +1,97 @@
-// calculator.ts
-import fs from "fs";
-import path from "path";
+import net from "net";
 
-const DB_FILE = path.join(process.cwd(), "data", "measurements.jsonl");
+const STORAGE_HOST: string = process.env.STORAGE_HOST || "172.23.130.167";
+const STORAGE_PORT: number = Number(process.env.STORAGE_PORT || "6000");
 
-function readAll(): any[] {
-  if (!fs.existsSync(DB_FILE)) return [];
-  const txt = fs.readFileSync(DB_FILE, "utf8").trim();
-  if (!txt) return [];
-  return txt.split("\n").map(l => {
-    try { return JSON.parse(l); } catch { return null; }
-  }).filter(Boolean);
+// Tipo do dado esperado do sensor
+interface Measurement {
+  value: number;          // já convertido para number
+  timestamp?: string;
+  [key: string]: any;     // permite campos extras
 }
 
-function latestPerSensor(records: any[]) {
-  const map = new Map<string, any>();
-  for (const r of records) {
-    const key = `${r.city}::${r.sensorId}`;
-    if (!map.has(key) || new Date(r.timestamp) > new Date(map.get(key).timestamp)) {
-      map.set(key, r);
-    }
-  }
-  return map;
+// Tipo das estatísticas calculadas
+interface Stats {
+  count: number;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
 }
 
-function averageByCityAndType(records: any[]) {
-  const sums: Record<string, { sum: number; count: number }> = {};
-  for (const r of records) {
-    const key = `${r.city}::${r.sensorType}`;
-    if (!sums[key]) sums[key] = { sum: 0, count: 0 };
-    sums[key].sum += Number(r.value);
-    sums[key].count += 1;
-  }
-  const out: Record<string, number> = {};
-  for (const k of Object.keys(sums)) {
-    out[k] = +(sums[k].sum / sums[k].count).toFixed(2);
-  }
-  return out;
-}
+// Função para buscar dados do Storage
+function fetchData(callback: (data: Measurement[]) => void): void {
+  const client = net.createConnection(
+    { host: STORAGE_HOST, port: STORAGE_PORT },
+    () => client.write("GET_ALL\n")
+  );
 
-function main() {
-  const records = readAll();
-  console.log(`\n[CALCULATOR] Registros lidos: ${records.length}\n`);
+  let buffer = "";
 
-  console.log("Última leitura por sensor:");
-  const latest = latestPerSensor(records);
-  latest.forEach((v, k) => {
-    console.log(`${k} => ${v.sensorType} = ${v.value}${v.unit} @ ${v.timestamp}`);
+  client.on("data", (data: Buffer) => {
+    buffer += data.toString();
   });
 
-  console.log("\nMédias por cidade e tipo:");
-  const avg = averageByCityAndType(records);
-  for (const k of Object.keys(avg)) {
-    console.log(`${k} => ${avg[k]}`);
-  }
-  console.log("\n");
+  client.on("end", () => {
+    const lines = buffer.trim().split("\n");
+    const data: Measurement[] = [];
+
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+
+        // converte value para number
+        if (typeof obj.value === "string") {
+          obj.value = Number(obj.value);
+        }
+
+        if (!isNaN(obj.value)) {
+          data.push(obj as Measurement);
+        }
+      } catch {
+        // ignora linhas inválidas
+      }
+    }
+
+    callback(data);
+  });
+
+  client.on("error", (err: Error) => {
+    console.error("[CALCULATOR] Erro ao conectar ao Storage:", err.message);
+    callback([]);
+  });
 }
 
-main();
+// Função para calcular estatísticas
+function calculateStats(data: Measurement[]): Stats {
+  if (data.length === 0) return { count: 0, avg: null, min: null, max: null };
+
+  const values: number[] = data
+    .map((d) => d.value)
+    .filter((v): v is number => typeof v === "number" && !isNaN(v));
+
+  if (values.length === 0) return { count: 0, avg: null, min: null, max: null };
+
+  const sum = values.reduce((a, b) => a + b, 0);
+
+  return {
+    count: values.length,
+    avg: sum / values.length,
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
+}
+
+// Execução periódica
+function runCalculator(): void {
+  console.log("[CALCULATOR] Solicitando dados ao Storage...");
+  fetchData((data) => {
+    const stats = calculateStats(data);
+    console.log("[CALCULATOR] Estatísticas calculadas:");
+    console.log(`- Total registros: ${stats.count}`);
+    console.log(`- Valor médio: ${stats.avg}`);
+    console.log(`- Valor mínimo: ${stats.min}`);
+    console.log(`- Valor máximo: ${stats.max}`);
+  });
+}
+
+setInterval(runCalculator, 5000);
