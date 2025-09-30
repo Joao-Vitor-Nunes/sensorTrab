@@ -1,13 +1,13 @@
 import net from "net";
 
-const STORAGE_HOST: string = process.env.STORAGE_HOST || "172.23.130.167";
-const STORAGE_PORT: number = Number(process.env.STORAGE_PORT || "6000");
+const STORAGE_HOST: string = "172.23.130.167";
+const STORAGE_PORT: number =6000;
 
 // Tipo do dado esperado do sensor
 interface Measurement {
-  value: number;          // já convertido para number
+  value: number;          
   timestamp?: string;
-  [key: string]: any;     // permite campos extras
+  [key: string]: any;   
 }
 
 // Tipo das estatísticas calculadas
